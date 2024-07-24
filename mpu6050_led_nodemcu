@@ -1,0 +1,89 @@
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <ESP8266WiFi.h>
+
+Adafruit_MPU6050 mpu;
+
+const int ledPins[7] = {D0, D3, D4, D5, D6, D7, D8}; // D5 is the center LED
+
+const int numReadings = 10; // Number of readings to average for smoothing
+float readings[numReadings]; // Array to store readings
+int readIndex = 0; // Index of the current reading
+float total = 0; // Sum of the readings
+float average = 0; // Average of the readings
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Initialize LED pins as outputs
+  for (int i = 0; i < 7; i++) {
+    pinMode(ledPins[i], OUTPUT);
+    digitalWrite(ledPins[i], LOW);
+  }
+  
+  // Initialize MPU6050
+  if (!mpu.begin()) {
+    Serial.println("Failed to find MPU6050 chip");
+    while (1) {
+      delay(10);
+    }
+  }
+
+  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+  mpu.setGyroRange(MPU6050_RANGE_250_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
+  
+  // Initialize the readings array
+  for (int i = 0; i < numReadings; i++) {
+    readings[i] = 0;
+  }
+}
+
+void loop() {
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  // Subtract the last reading
+  total = total - readings[readIndex];
+  // Read new inclination
+  float yInclination = a.acceleration.y;
+  // Add the new reading to the total
+  readings[readIndex] = yInclination;
+  total = total + readings[readIndex];
+  // Advance to the next position in the array
+  readIndex = readIndex + 1;
+  // If we're at the end of the array, wrap around to the beginning
+  if (readIndex >= numReadings) {
+    readIndex = 0;
+  }
+  // Calculate the average
+  average = total / numReadings;
+  
+  // Map average inclination to LED index range (-3 to 3)
+  int ledIndex = map(average, -5, 5, -3, 3); // Adjust the range to -5 to 5
+  ledIndex = constrain(ledIndex, -3, 3);
+
+  // Turn off all LEDs initially
+  for (int i = 0; i < 7; i++) {
+    digitalWrite(ledPins[i], LOW);
+  }
+
+  // Update LEDs based on inclination
+  if (ledIndex < 0) {
+    // Left inclination
+    for (int i = 3; i >= (3 + ledIndex); i--) {
+      digitalWrite(ledPins[i], HIGH);
+    }
+  } else if (ledIndex > 0) {
+    // Right inclination
+    for (int i = 3; i <= (3 + ledIndex); i++) {
+      digitalWrite(ledPins[i], HIGH);
+    }
+  } else {
+    // Center LED for neutral position
+    digitalWrite(ledPins[3], HIGH);
+  }
+
+  delay(100);
+}
